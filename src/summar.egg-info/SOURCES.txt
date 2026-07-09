@@ -1,0 +1,14 @@
+README.md
+pyproject.toml
+src/summar/__init__.py
+src/summar/api.py
+src/summar/cli.py
+src/summar/config.py
+src/summar/model.py
+src/summar/preprocessing.py
+src/summar/train.py
+src/summar.egg-info/PKG-INFO
+src/summar.egg-info/SOURCES.txt
+src/summar.egg-info/dependency_links.txt
+src/summar.egg-info/top_level.txt
+tests/test_preprocessing.py

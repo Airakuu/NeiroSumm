@@ -1,0 +1,13 @@
+.venv/
+.cache/
+.hfhome/
+work_tmp/
+models/
+checkpoints/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+text.txt
+.DS_Store
+Thumbs.db
