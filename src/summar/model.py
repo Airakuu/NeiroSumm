@@ -53,15 +53,10 @@ class SummarizationModel:
         assert self._tokenizer is not None
         assert self._model is not None
 
-        chunks = prepare_text_chunks(source_text, chunk_size=8, overlap=self.config.chunk_overlap)
-        if not chunks:
-            chunks = [source_text]
+        chunks = self._prepare_chunks(source_text)
 
         partial_summaries = [
-            self._summarize_chunk(
-                chunk,
-                prompt_prefix="Кратко перескажи текст, сохранив ключевые события и смысл: ",
-            )
+            self._summarize_chunk(chunk)
             for chunk in chunks
         ]
         if len(partial_summaries) == 1:
@@ -78,48 +73,29 @@ class SummarizationModel:
             joined,
             tokenizer=self._tokenizer,
             model=self._model,
-            prompt_prefix="Сделай связное краткое содержание без копирования фраз из исходного текста: ",
         )
         return self._fit_summary_length(final_summary, source_text)
 
+    def _prepare_chunks(self, source_text: str) -> list[str]:
+        assert self._tokenizer is not None
+        token_ids = self._tokenizer.encode(source_text, add_special_tokens=True)
+        if len(token_ids) <= self.config.max_input_tokens:
+            return [source_text]
+
+        chunks = prepare_text_chunks(
+            source_text,
+            chunk_size=8,
+            overlap=self.config.chunk_overlap,
+        )
+        return chunks or [source_text]
+
     def _fit_summary_length(self, summary: str, source_text: str) -> str:
-        normalized_summary = self._clean_generated_summary(summary)
-        if not normalized_summary:
-            return ""
-
-        min_length = self._required_summary_length(source_text)
-        if len(normalized_summary) >= min_length:
-            return normalized_summary
-
-        expanded_summary = self._generate_more_detailed_summary(source_text, normalized_summary)
-        expanded_summary = self._clean_generated_summary(expanded_summary)
-        if len(expanded_summary) >= len(normalized_summary):
-            return expanded_summary
-        return normalized_summary
+        # Do not pad a correct short summary: forced retries made the model invent details.
+        return self._clean_generated_summary(summary)
 
     def _required_summary_length(self, source_text: str) -> int:
         ratio = min(max(self.config.min_retention_ratio, 0.1), 1.0)
         return max(1, int(len(source_text) * ratio))
-
-    def _generate_more_detailed_summary(self, source_text: str, draft_summary: str) -> str:
-        detailed_config = replace(
-            self.config,
-            max_summary_tokens=min(max(self.config.max_summary_tokens, 320), 384),
-            min_summary_tokens=min(max(self.config.min_summary_tokens, 120), 220),
-            num_beams=max(self.config.num_beams, 5),
-        )
-
-        refinement_source = source_text
-
-        return SummarizationModel(detailed_config)._summarize_chunk(
-            refinement_source,
-            tokenizer=self._tokenizer,
-            model=self._model,
-            prompt_prefix=(
-                "Подробно перескажи текст своими словами. "
-                "Сохрани ключевые события, причинно-следственные связи и общий смысл: "
-            ),
-        )
 
     def _clean_generated_summary(self, summary: str) -> str:
         normalized = normalize_text(summary)
@@ -137,29 +113,44 @@ class SummarizationModel:
             for sentence in self._split_summary_sentences(normalized)
             if not any(fragment in sentence.lower() for fragment in banned_fragments)
         ]
-        if sentences:
-            return normalize_text(" ".join(sentences))
-        return normalized
+        cleaned = normalize_text(" ".join(sentences)) if sentences else normalized
+        return self._finalize_summary_text(cleaned)
 
     def _split_summary_sentences(self, text: str) -> list[str]:
         parts = re.split(r"(?<=[.!?])\s+", text)
         return [part.strip() for part in parts if part.strip()]
+
+    def _finalize_summary_text(self, text: str) -> str:
+        cleaned = normalize_text(text)
+        if not cleaned:
+            return ""
+
+        cleaned = re.sub(r"\s+([,.;:!?])", r"\1", cleaned)
+        cleaned = re.sub(r"([,.;:!?]){2,}", r"\1", cleaned)
+        cleaned = re.sub(r"([,.;:!?])(?=[A-Za-zА-Яа-яЁё])", r"\1 ", cleaned)
+        cleaned = cleaned.strip(" ,;:")
+
+        if cleaned and len(cleaned.split()) >= 3 and cleaned[-1] not in ".!?":
+            cleaned += "."
+
+        if cleaned and cleaned[0].isalpha():
+            cleaned = cleaned[0].upper() + cleaned[1:]
+
+        return cleaned
 
     def _summarize_chunk(
         self,
         text: str,
         tokenizer=None,
         model=None,
-        prompt_prefix: str = "",
     ) -> str:
         tokenizer = tokenizer or self._tokenizer
         model = model or self._model
         assert tokenizer is not None
         assert model is not None
 
-        prompt_text = f"{prompt_prefix}{text}".strip()
         encoded = tokenizer(
-            prompt_text,
+            text,
             max_length=self.config.max_input_tokens,
             truncation=True,
             return_tensors="pt",
@@ -167,18 +158,57 @@ class SummarizationModel:
         encoded = {key: value.to(self.config.device) for key, value in encoded.items()}
 
         input_tokens = int(encoded["input_ids"].shape[1])
-        dynamic_min_tokens = min(
-            self.config.max_summary_tokens - 8,
-            max(self.config.min_summary_tokens, int(input_tokens * self.config.min_retention_ratio * 0.85)),
-        )
+        if self._uses_absum_generation():
+            min_tokens, max_tokens = self._absum_token_limits(input_tokens)
+            output = model.generate(
+                **encoded,
+                min_length=min_tokens,
+                max_length=max_tokens,
+                num_beams=3,
+                length_penalty=1.0,
+                early_stopping=True,
+                no_repeat_ngram_size=3,
+            )
+            return tokenizer.decode(output[0], skip_special_tokens=True).strip()
+
+        dynamic_min_tokens, dynamic_max_tokens = self._generation_token_limits(input_tokens)
 
         output = model.generate(
             **encoded,
-            max_length=self.config.max_summary_tokens,
+            max_length=dynamic_max_tokens,
             min_length=dynamic_min_tokens,
             num_beams=self.config.num_beams,
-            length_penalty=1.35,
+            length_penalty=1.0,
             early_stopping=True,
             no_repeat_ngram_size=3,
         )
         return tokenizer.decode(output[0], skip_special_tokens=True).strip()
+
+    def _uses_absum_generation(self) -> bool:
+        return "rut5-base-absum" in str(self.config.model_name).lower()
+
+    def _absum_token_limits(self, input_tokens: int) -> tuple[int, int]:
+        retention = min(max(self.config.min_retention_ratio, 0.1), 0.8)
+        min_ratio = retention * 0.82
+        max_ratio = min(max(retention * 1.67, 0.55), 0.9)
+        configured_max = max(self.config.max_summary_tokens, 16)
+
+        min_tokens = max(self.config.min_summary_tokens, int(input_tokens * min_ratio))
+        min_tokens = min(min_tokens, configured_max - 8)
+        max_tokens = max(min_tokens + 8, int(input_tokens * max_ratio))
+        max_tokens = min(max_tokens, configured_max)
+        return min_tokens, max_tokens
+
+    def _generation_token_limits(self, input_tokens: int) -> tuple[int, int]:
+        retention = min(max(self.config.min_retention_ratio, 0.1), 0.8)
+        min_ratio = retention * 0.85
+        # The upper bound is only a safety limit. A wider range lets the model
+        # finish its current sentence instead of cutting a valid summary midway.
+        max_ratio = min(max(retention * 2.0, 0.65), 0.9)
+        configured_max = max(self.config.max_summary_tokens, 16)
+
+        min_tokens = max(self.config.min_summary_tokens, int(input_tokens * min_ratio))
+        min_tokens = min(min_tokens, configured_max - 8)
+        max_tokens = max(min_tokens + 8, int(input_tokens * max_ratio))
+        max_tokens = min(max_tokens, configured_max)
+        return min_tokens, max_tokens

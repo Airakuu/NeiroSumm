@@ -6,16 +6,15 @@ from pathlib import Path
 import requests
 
 
-BASE_URL = "https://huggingface.co/IlyaGusev/rut5_base_sum_gazeta/resolve/main"
+BASE_URL = "https://huggingface.co/cointegrated/rut5-base-absum/resolve/main"
 FILES = [
     "config.json",
     "special_tokens_map.json",
     "spiece.model",
-    "tokenizer.json",
     "tokenizer_config.json",
-    "pytorch_model.bin",
+    "model.safetensors",
 ]
-TARGET_DIR = Path("models") / "rut5_base_sum_gazeta"
+TARGET_DIR = Path("models") / "rut5-base-absum"
 CHUNK_SIZE = 1024 * 1024
 
 
