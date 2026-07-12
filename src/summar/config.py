@@ -26,8 +26,13 @@ class TrainingConfig:
     output_dir: str = DEFAULT_OUTPUT_DIR
     max_input_length: int = 768
     max_target_length: int = 128
-    learning_rate: float = 2e-5
+    learning_rate: float = 5e-5
     train_batch_size: int = 2
     eval_batch_size: int = 2
     epochs: int = 1
     weight_decay: float = 0.01
+    warmup_ratio: float = 0.1
+    label_smoothing_factor: float = 0.1
+    early_stopping_patience: int = 6
+    evaluation_steps: int = 40
+    checkpoint_steps: int = 40

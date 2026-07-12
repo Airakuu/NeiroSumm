@@ -31,6 +31,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--epochs", type=int, default=1)
     parser.add_argument("--train-batch-size", type=int, default=2)
     parser.add_argument("--eval-batch-size", type=int, default=2)
+    parser.add_argument("--learning-rate", type=float, default=5e-5)
+    parser.add_argument("--warmup-ratio", type=float, default=0.1)
+    parser.add_argument("--label-smoothing-factor", type=float, default=0.1)
+    parser.add_argument("--early-stopping-patience", type=int, default=6)
+    parser.add_argument("--eval-steps", type=int, default=40)
+    parser.add_argument("--save-steps", type=int, default=40)
     parser.add_argument("--test-dir", type=Path, default=PROJECT_ROOT / "test_texts")
     parser.add_argument(
         "--skip-test-run",
@@ -99,6 +105,7 @@ def train(args: argparse.Namespace) -> None:
             AutoModelForSeq2SeqLM,
             AutoTokenizer,
             DataCollatorForSeq2Seq,
+            EarlyStoppingCallback,
             Seq2SeqTrainer,
             Seq2SeqTrainingArguments,
         )
@@ -113,6 +120,12 @@ def train(args: argparse.Namespace) -> None:
         epochs=args.epochs,
         train_batch_size=args.train_batch_size,
         eval_batch_size=args.eval_batch_size,
+        learning_rate=args.learning_rate,
+        warmup_ratio=args.warmup_ratio,
+        label_smoothing_factor=args.label_smoothing_factor,
+        early_stopping_patience=args.early_stopping_patience,
+        evaluation_steps=args.eval_steps,
+        checkpoint_steps=args.save_steps,
     )
 
     dataset = _load_dataset(args)
@@ -171,13 +184,19 @@ def train(args: argparse.Namespace) -> None:
         per_device_train_batch_size=config.train_batch_size,
         per_device_eval_batch_size=config.eval_batch_size,
         weight_decay=config.weight_decay,
+        warmup_ratio=config.warmup_ratio,
+        label_smoothing_factor=config.label_smoothing_factor,
         save_total_limit=2,
         num_train_epochs=config.epochs,
         predict_with_generate=True,
         logging_steps=5,
         eval_strategy="steps" if has_validation else "no",
-        eval_steps=10 if has_validation else None,
-        save_steps=10,
+        eval_steps=config.evaluation_steps if has_validation else None,
+        save_steps=config.checkpoint_steps,
+        save_strategy="steps",
+        load_best_model_at_end=has_validation,
+        metric_for_best_model="eval_loss" if has_validation else None,
+        greater_is_better=False if has_validation else None,
         fp16=False,
         report_to="none",
     )
@@ -190,6 +209,11 @@ def train(args: argparse.Namespace) -> None:
         processing_class=tokenizer,
         data_collator=DataCollatorForSeq2Seq(tokenizer=tokenizer, model=model),
         compute_metrics=compute_metrics if has_validation and rouge is not None else None,
+        callbacks=(
+            [EarlyStoppingCallback(early_stopping_patience=config.early_stopping_patience)]
+            if has_validation
+            else None
+        ),
     )
 
     trainer.train()
