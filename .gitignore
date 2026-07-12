@@ -6,6 +6,7 @@ models/
 checkpoints/
 results/
 __pycache__/
+*.egg-info/
 *.pyc
 *.pyo
 *.pyd

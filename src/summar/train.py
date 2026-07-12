@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import gc
 import os
+import shutil
 from pathlib import Path
 
 from summar.config import DEFAULT_MODEL_NAME, DEFAULT_OUTPUT_DIR, TrainingConfig
@@ -37,6 +38,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--early-stopping-patience", type=int, default=6)
     parser.add_argument("--eval-steps", type=int, default=40)
     parser.add_argument("--save-steps", type=int, default=40)
+    parser.add_argument(
+        "--keep-intermediate-checkpoints",
+        action="store_true",
+        help="Не удалять checkpoint-* после сохранения итоговой модели",
+    )
     parser.add_argument("--test-dir", type=Path, default=PROJECT_ROOT / "test_texts")
     parser.add_argument(
         "--skip-test-run",
@@ -87,6 +93,15 @@ def _load_dataset(args: argparse.Namespace):
     raise ValueError(
         "Нужно указать --train-file, --dataset-path или --dataset-name"
     )
+
+
+def _remove_intermediate_checkpoints(output_dir: Path) -> int:
+    removed = 0
+    for path in output_dir.glob("checkpoint-*"):
+        if path.is_dir() and path.name.removeprefix("checkpoint-").isdigit():
+            shutil.rmtree(path)
+            removed += 1
+    return removed
 
 
 def train(args: argparse.Namespace) -> None:
@@ -219,6 +234,11 @@ def train(args: argparse.Namespace) -> None:
     trainer.train()
     trainer.save_model(config.output_dir)
     tokenizer.save_pretrained(config.output_dir)
+
+    if not args.keep_intermediate_checkpoints:
+        removed = _remove_intermediate_checkpoints(Path(config.output_dir))
+        if removed:
+            print(f"Удалено промежуточных чекпоинтов: {removed}")
 
     if not args.skip_test_run:
         # Reload the saved checkpoint through the same pipeline used by main.py.

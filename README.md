@@ -70,6 +70,11 @@ python train_model.py --train-file data/train.json --validation-file data/valida
 запускаются пять постоянных тестов, а отчёт сохраняется в
 `checkpoints/rut5-absum-finetuned-v4/test_results.json`.
 
+После успешного сохранения итоговой модели промежуточные папки `checkpoint-*`
+удаляются автоматически, чтобы каждый запуск обучения не занимал несколько
+лишних гигабайт. Для отладки их можно сохранить флагом
+`--keep-intermediate-checkpoints`.
+
 Автоматическую проверку можно отключить аргументом `--skip-test-run`.
 
 ### 5. Проверка модели
