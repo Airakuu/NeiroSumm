@@ -62,6 +62,12 @@ class ModelLengthTests(unittest.TestCase):
         )
         self.assertEqual(model._absum_token_limits(341), (92, 187))
 
+    def test_finetuned_absum_checkpoint_uses_absum_generation(self) -> None:
+        model = SummarizationModel(
+            SummarizerConfig(model_name="checkpoints/rut5-absum-finetuned")
+        )
+        self.assertTrue(model._uses_absum_generation())
+
     def test_clean_generated_summary_adds_final_punctuation(self) -> None:
         model = SummarizationModel()
         self.assertEqual(

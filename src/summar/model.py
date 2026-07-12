@@ -185,7 +185,8 @@ class SummarizationModel:
         return tokenizer.decode(output[0], skip_special_tokens=True).strip()
 
     def _uses_absum_generation(self) -> bool:
-        return "rut5-base-absum" in str(self.config.model_name).lower()
+        model_name = str(self.config.model_name).lower().replace("_", "-")
+        return "rut5-base-absum" in model_name or "rut5-absum-finetuned" in model_name
 
     def _absum_token_limits(self, input_tokens: int) -> tuple[int, int]:
         retention = min(max(self.config.min_retention_ratio, 0.1), 0.8)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import gc
 import os
 from pathlib import Path
 
@@ -30,6 +31,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--epochs", type=int, default=1)
     parser.add_argument("--train-batch-size", type=int, default=2)
     parser.add_argument("--eval-batch-size", type=int, default=2)
+    parser.add_argument("--test-dir", type=Path, default=PROJECT_ROOT / "test_texts")
+    parser.add_argument(
+        "--skip-test-run",
+        action="store_true",
+        help="Не запускать постоянные тестовые тексты после обучения",
+    )
     return parser
 
 
@@ -188,6 +195,24 @@ def train(args: argparse.Namespace) -> None:
     trainer.train()
     trainer.save_model(config.output_dir)
     tokenizer.save_pretrained(config.output_dir)
+
+    if not args.skip_test_run:
+        # Reload the saved checkpoint through the same pipeline used by main.py.
+        del trainer
+        del model
+        gc.collect()
+
+        from summar.evaluation import run_test_suite
+
+        output_dir = Path(config.output_dir)
+        test_output = output_dir / "test_results.json"
+        print("Запуск постоянного тестового набора...")
+        run_test_suite(
+            model_name=str(output_dir),
+            test_dir=args.test_dir,
+            output_path=test_output,
+        )
+        print(f"Результаты тестов сохранены: {test_output}")
 
 
 def main() -> None:

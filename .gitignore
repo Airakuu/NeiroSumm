@@ -4,6 +4,7 @@
 work_tmp/
 models/
 checkpoints/
+results/
 __pycache__/
 *.pyc
 *.pyo

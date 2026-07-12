@@ -3,9 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-DEFAULT_MODEL_NAME = "cointegrated/rut5-base-absum"
+DEFAULT_MODEL_NAME = "checkpoints/rut5-absum-finetuned"
 DEFAULT_OUTPUT_DIR = "checkpoints/summar-model"
-DEFAULT_LOCAL_MODEL_DIR = Path("models") / "rut5-base-absum"
+DEFAULT_LOCAL_MODEL_DIR = Path("checkpoints") / "rut5-absum-finetuned"
 
 
 @dataclass(slots=True)
