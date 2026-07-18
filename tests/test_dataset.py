@@ -21,8 +21,8 @@ class DatasetTests(unittest.TestCase):
         train = load_split("train.json")
         validation = load_split("validation.json")
 
-        self.assertEqual(len(train), 175)
-        self.assertEqual(len(validation), 75)
+        self.assertEqual(len(train), 210)
+        self.assertEqual(len(validation), 90)
         self.assertEqual(len(validation) / (len(train) + len(validation)), 0.3)
 
     def test_splits_have_valid_schema_and_do_not_overlap(self) -> None:
